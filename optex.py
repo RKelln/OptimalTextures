@@ -1,4 +1,6 @@
 import argparse
+import os
+import glob
 from functools import partial
 
 import torch
@@ -301,6 +303,17 @@ if __name__ == "__main__":
 
     torch.set_grad_enabled(False)
 
-    output = optimal_texture(**vars(args))
+    if os.path.isdir(args.content):
+        image_dir = args.content
+        files = []
+        for ext in ('*.gif', '*.png', '*.jpg'):
+            files.extend(glob.glob(os.path.join(image_dir, ext)))
+        files.sort()
+        for i, f in enumerate(files):
+            args.content = f
+            output = optimal_texture(**vars(args))
+            util.save_image(output, args, i)
 
-    util.save_image(output, args)
+    else:
+        output = optimal_texture(**vars(args))
+        util.save_image(output, args)

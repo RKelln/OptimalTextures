@@ -43,7 +43,7 @@ def round32(integer):
     return int(integer + 32 - 1) & -32
 
 
-def save_image(output, args):
+def save_image(output, args, count=None):
     outs = [name(style) for style in args.style]
     if len(args.style) > 1:
         outs += ["blend" + str(args.mixing_alpha)]
@@ -60,6 +60,8 @@ def save_image(output, args):
         outs += [args.color_transfer]
     outs += [str(args.size)]
     outname = "_".join(outs)
+    if count is not None:
+        outname = f"{outname}_{count:05d}"
     torchvision.utils.save_image(output, f"{args.output_dir}/{outname}.png")
 
 
