@@ -111,6 +111,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+envs/
+stacked_envs/
 
 # Spyder project settings
 .spyderproject
@@ -129,3 +131,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# input and output (beyond what is supplied in examples)
+content/
+output/
+style/
