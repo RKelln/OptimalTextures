@@ -1,6 +1,7 @@
 import argparse
-import os
 import glob
+import os
+import random
 from functools import partial
 
 import torch
@@ -34,6 +35,7 @@ def optimal_texture(
     passes=5,
     iters=500,
     seed=None,
+    rotations=None,
     **kwargs,
 ):
     if seed is not None:
@@ -62,6 +64,10 @@ def optimal_texture(
         style_layers = mix_style_layers(style_layers, mixing_mask, mixing_alpha, hist_mode)
 
     pbar = tqdm(total=iters, smoothing=0)
+
+    if rotations is None:
+        rotations = [[None for i in range(6)] for j in range(passes)]
+
     for p in range(passes):
 
         if use_multires and p != 0:
@@ -87,8 +93,12 @@ def optimal_texture(
             if use_pca:
                 output_layer = output_layer @ style_eigvs[l]  # project onto principal components
 
+            if rotations[p][l] is None:
+                #print("set rotation: {} {} ".format(p, l))
+                rotations[p][l] = random_rotation(output_layer.shape[-1])
+
             for _ in range(iters_per_pass_and_layer[p, l - 1]):
-                output_layer = optimal_transport(output_layer, style_layers[l], hist_mode)
+                output_layer = optimal_transport(output_layer, style_layers[l], hist_mode, rotations[p][l])
 
                 # apply content matching step
                 if content is not None and l >= 3:
@@ -115,13 +125,14 @@ def optimal_texture(
             output = output.permute(0, 3, 1, 2)  # [b, c, h, w]
 
         elif color_transfer == "lum":
-            return target  # return output with hue and saturation from content
+            return target, rotations  # return output with hue and saturation from content
 
-    return output
+    return output, rotations
 
 
-def optimal_transport(output_layer, style_layer, hist_mode):
-    rotation = random_rotation(output_layer.shape[-1])
+def optimal_transport(output_layer, style_layer, hist_mode, rotation=None):
+    if rotation is None:
+        rotation = random_rotation(output_layer.shape[-1])
 
     rotated_output = output_layer @ rotation
     rotated_style = style_layer @ rotation
@@ -304,16 +315,77 @@ if __name__ == "__main__":
     torch.set_grad_enabled(False)
 
     if os.path.isdir(args.content):
-        image_dir = args.content
-        files = []
+        # create textures for each content image
+        # set the seed if none set
+        if args.seed is None:
+            args.seed = random.randint(1,2^63-1)
+        content_dir = args.content
+        content_files = []
         for ext in ('*.gif', '*.png', '*.jpg'):
-            files.extend(glob.glob(os.path.join(image_dir, ext)))
-        files.sort()
-        for i, f in enumerate(files):
-            args.content = f
-            output = optimal_texture(**vars(args))
-            util.save_image(output, args, i)
+            content_files.extend(glob.glob(os.path.join(content_dir, ext)))
+        content_files.sort()
+        rotations = None
+
+        if len(args.style) == 1 and os.path.isdir(args.style[0]):
+            # loop through each style 
+
+            # set the seed if none set
+            if args.seed is None:
+                args.seed = random.randint(1,2^63-1)
+                
+            style_dir = args.style[0]
+            style_files = []
+            for ext in ('*.gif', '*.png', '*.jpg'):
+                style_files.extend(glob.glob(os.path.join(style_dir, ext)))
+            style_files.sort()
+
+            # loop through styles for each content
+            pbar = tqdm(style_files, leave=True)
+            for style_file in pbar:
+                pbar.set_description(style_file, refresh=True)
+                args.style[0] = style_file
+                rotations = None
+                for i, content_file in enumerate(tqdm(content_files, desc=content_dir, leave=True)):
+                    args.content = content_file
+                    args.rotations = rotations
+                    output, rotations = optimal_texture(**vars(args))
+                    torch.cuda.empty_cache()
+                    util.save_image(output, args, count=i, directory=util.name(style_dir))
+
+        else: # loop through each content
+
+            for i, f in enumerate(tqdm(content_files)):
+                args.content = f
+                args.rotations = rotations
+                output, rotations = optimal_texture(**vars(args))
+                torch.cuda.empty_cache()
+                util.save_image(output, args, count=i)
 
     else:
-        output = optimal_texture(**vars(args))
-        util.save_image(output, args)
+
+        if len(args.style) == 1 and os.path.isdir(args.style[0]):
+            # loop through each style 
+
+            # set the seed if none set
+            if args.seed is None:
+                args.seed = random.randint(1,2^63-1)
+                
+            style_dir = args.style[0]
+            style_files = []
+            for ext in ('*.gif', '*.png', '*.jpg'):
+                style_files.extend(glob.glob(os.path.join(style_dir, ext)))
+            style_files.sort()
+
+            # loop through styles for each content
+            pbar = tqdm(style_files, leave=True)
+            for style_file in pbar:
+                pbar.set_description(style_file, refresh=True)
+                args.style[0] = style_file
+                rotations = None
+                args.rotations = rotations
+                output, rotations = optimal_texture(**vars(args))
+                torch.cuda.empty_cache()
+                util.save_image(output, args)
+        else:
+            output, _ = optimal_texture(**vars(args))
+            util.save_image(output, args)

@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torchvision
 import torchvision.transforms.functional as transforms
@@ -43,7 +45,7 @@ def round32(integer):
     return int(integer + 32 - 1) & -32
 
 
-def save_image(output, args, count=None):
+def save_image(output, args, count=None, directory=None):
     outs = [name(style) for style in args.style]
     if len(args.style) > 1:
         outs += ["blend" + str(args.mixing_alpha)]
@@ -58,11 +60,16 @@ def save_image(output, args, count=None):
         outs += ["scale" + str(args.style_scale)]
     if args.color_transfer is not None:
         outs += [args.color_transfer]
+    outs += ["seed" + str(args.seed)]
     outs += [str(args.size)]
     outname = "_".join(outs)
     if count is not None:
-        outname = f"{outname}_{count:05d}"
-    torchvision.utils.save_image(output, f"{args.output_dir}/{outname}.png")
+        outname = f"{count:05d}_{outname}"
+    out_dir = args.output_dir
+    if directory is not None:
+        out_dir = os.path.join(args.output_dir, directory)
+    os.makedirs(out_dir, exist_ok=True)
+    torchvision.utils.save_image(output, os.path.join(out_dir, f"{outname}.png"))
 
 
 def name(filepath):
